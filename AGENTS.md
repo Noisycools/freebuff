@@ -1,6 +1,7 @@
 # Freebuff
 
 Freebuff is the public, free coding agent built from the Codebuff agent framework.
+This fork is maintained by @Noisycools as a personalized derivative focused on safe, roadmap-driven customization.
 
 ## Key Technologies
 

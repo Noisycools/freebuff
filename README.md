@@ -2,6 +2,8 @@
 
 English | [简体中文](./README.zh-CN.md)
 
+> This repository is maintained as a personalized derivative of Freebuff by [@Noisycools](https://github.com/Noisycools), focused on safe customization, roadmap-driven agent improvements, and compatibility with the upstream TypeScript/Bun monorepo.
+
 **Five free AI products for coding, building, and research.** No subscription, credits, or API key required.
 
 [Freebuff](https://freebuff.com) brings specialized agents and a choice of leading models to your terminal, desktop, browser, and GitHub repositories. Text ads support access to the included models.
