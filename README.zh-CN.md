@@ -2,6 +2,10 @@
 
 [English](./README.md) | 简体中文
 
+> 本仓库由 [@Noisycools](https://github.com/Noisycools) 维护，是 Freebuff 的个性化衍生版本，专注于安全定制、以路线图驱动的智能体改进，以及与上游 TypeScript/Bun monorepo 保持兼容。
+>
+> 初次接触？[Fork 指南](./docs/fork.md)说明了哪些文件属于 fork 所有、[CONTRIBUTING.md](./CONTRIBUTING.md) 中的贡献流程与 fork 自身路线图的关系，以及哪些内容绝不允许定制。
+
 **面向编程、构建和研究的五款免费 AI 产品。** 无需订阅、积分或 API 密钥。
 
 [Freebuff](https://freebuff.com) 将专业化智能体和多种领先模型带到你的终端、桌面、浏览器和 GitHub 仓库中。内置模型由文字广告支持。
@@ -93,7 +97,7 @@ bun up
 bun start-cli
 ```
 
-环境配置及提交拉取请求前应运行的检查，请参阅[贡献指南](./CONTRIBUTING.md)、[开发指南](./docs/development.md)和[测试指南](./docs/testing.md)。
+环境配置及提交拉取请求前应运行的检查，请参阅[贡献指南](./CONTRIBUTING.md)和[测试指南](./docs/testing.md)。
 
 ## 基于 Codebuff 构建
 

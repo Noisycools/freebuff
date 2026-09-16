@@ -6,7 +6,10 @@ import {
   OPUS_MODEL,
   publisher,
   SKILL_DISCOVERY_GUIDANCE,
+  toolRoutingGuidance,
 } from './constants'
+import { getPersonaAppendix } from './personas'
+import { getTemplateAppendix } from './templates'
 import {
   PLACEHOLDER,
   type SecretAgentDefinition,
@@ -93,9 +96,22 @@ export function createBase3CliRoot(
     /** Drop the tools that address a human. For the eval harness, where an
      *  ask_user call would stall the run rather than gather anything. */
     noAskUser?: boolean
+    /** Optional persona preset (agents/personas.ts). Appends a working-style
+     *  section inside the appendix; changes nothing else. Unknown ids throw. */
+    persona?: string
+    /** Optional safety template (agents/templates.ts, ticket B3). Appends a
+     *  safety-focused section inside the appendix; changes nothing else and is
+     *  NEVER pre-enabled. Unknown ids throw. Composes with `persona`. */
+    safetyTemplate?: string
   } = {},
 ): Omit<SecretAgentDefinition, 'id'> {
-  const { model = OPUS_MODEL, isFreebuff = false, noAskUser = false } = options
+  const {
+    model = OPUS_MODEL,
+    isFreebuff = false,
+    noAskUser = false,
+    persona,
+    safetyTemplate,
+  } = options
   const base3 = createBase3(model)
 
   const root: Omit<SecretAgentDefinition, 'id'> = {
@@ -128,7 +144,13 @@ export function createBase3CliRoot(
       'skill',
     ],
     systemPrompt: `${base3.systemPrompt}
-${buildCliAppendix({ isFreebuff, model, noAskUser })}`,
+${buildCliAppendix({
+      isFreebuff,
+      model,
+      noAskUser,
+      persona,
+      safetyTemplate,
+    })}`,
   }
 
   if (!noAskUser) return root
@@ -148,11 +170,23 @@ function buildCliAppendix({
   isFreebuff,
   model,
   noAskUser = false,
+  persona,
+  safetyTemplate,
 }: {
   isFreebuff: boolean
   model: SecretAgentDefinition['model']
   noAskUser?: boolean
+  persona?: string
+  safetyTemplate?: string
 }): string {
+  // Persona and template text are appended as their own sections INSIDE the
+  // appendix (never position 0), so the byte-0 opening gate is untouched. Both
+  // getters throw on an unknown id rather than falling back to the default.
+  const personaAppendix = persona ? getPersonaAppendix(persona) : ''
+  const templateAppendix = safetyTemplate
+    ? getTemplateAppendix(safetyTemplate)
+    : ''
+
   return `
 # Working with the user
 ${
@@ -162,6 +196,7 @@ ${
 - **Ask about important decisions:** Use the ask_user tool to collaborate with the user on non-obvious choices — alternate implementation strategies, ambiguous requirements. Gather context first, and skip it when the answer is obvious or the detail can be changed later.
 - **Suggest next steps:** At the end of your turn, use the suggest_followups tool to suggest ~3 next steps the user might want to take. ${FOLLOWUP_STYLE_GUIDANCE}`
 }
+${toolRoutingGuidance(!noAskUser)}
 ${gravityIndexGuidance()}
 ${SKILL_DISCOVERY_GUIDANCE}
 
@@ -179,7 +214,8 @@ ${
         'For other questions, you can direct them to codebuff.com, or especially codebuff.com/docs for detailed information about the product.',
       ].join('\n')
 }
-
+${personaAppendix ? `\n${personaAppendix}\n` : ''}
+${templateAppendix ? `\n${templateAppendix}\n` : ''}
 ${PLACEHOLDER.SYSTEM_INFO_PROMPT}
 `
 }

@@ -37,6 +37,25 @@ export const gravityIndexGuidance = (deeperResearch = '') =>
   `- **Research services before recommending them:** Whenever the user needs to choose or integrate a third-party developer service (database, auth, payments, hosting, email, cache, monitoring, analytics, AI, storage, CMS, search, etc.), use the gravity_index tool to discover, compare, and get install guidance for options${deeperResearch}. Don't recommend or integrate a service from memory alone.`
 
 /**
+ * When to act directly vs. ask or verify (ticket B2).
+ *
+ * The base3 harness is single-loop: no subagents to delegate to, so
+ * "routing" means prompt guidance plus which tools are present. Each rule
+ * states trigger, action, and fallback, so error handling is deterministic
+ * rather than improvised by the model.
+ *
+ * Parameterized like `gravityIndexGuidance`: the eval harness drops the
+ * human tools (`noAskUser`), so the ask variant must name no absent tool.
+ * Static prose otherwise, so it survives stringification exactly as written.
+ */
+export const toolRoutingGuidance = (includeAskUser = true) =>
+  `# Tool routing
+
+- **Decide vs ask:** Trigger: more than one reasonable option. Action: ${includeAskUser ? 'if reversible and small, decide and state the assumption in one line; if irreversible or ambiguous, gather context first, then ask with ask_user.' : 'decide directly and state the assumption in one line; no input can arrive, so never wait for one.'} Fallback: ${includeAskUser ? 'if asking fails or no answer arrives, take the smallest reversible option, state it, and proceed.' : 'if blocked, take the smallest reversible option, state it, and proceed.'}
+- **Verify vs report:** Trigger: files changed or commands run. Action: run typecheck and relevant tests with run_terminal_command and report actual output. Fallback: if checks cannot run, name what is unverified and what would prove it; never claim a pass not seen.
+- **Explore vs assume:** Trigger: a project fact is needed. Action: locate it with code_search, glob, or read_files before editing. Fallback: if nothing is found, say so, proceed on a stated assumption, and name it in one line.`
+
+/**
  * The Opus-tier model shared by DEFAULT and MAX mode and every subagent they
  * spawn. Agent ids like `code-reviewer-opus` name the tier, not the generation,
  * so the generation lives here: bumping it is one edit instead of a dozen.

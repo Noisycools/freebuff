@@ -16,6 +16,7 @@ import {
   flushLiveChatState,
   scheduleCheckpointSave,
   settleCheckpointSave,
+  failureDiagnostics,
 } from '../run-state-storage'
 import type { ChatMessage, ContentBlock } from '../../types/chat'
 import type { RunState } from '@codebuff/sdk'
@@ -915,5 +916,46 @@ describe('poisoned payload persistence', () => {
     ) as ChatMessage[]
     const block = savedMessages[0].blocks?.[0] as any
     expect(block.outputRaw.self).toBe('[Circular]')
+  })
+
+  describe('failure diagnostics (C2)', () => {
+    test('failureDiagnostics derives chatId from the chat dir and keeps every field stable', () => {
+      expect(
+        failureDiagnostics({
+          surface: 'save-async',
+          chatDir: '/tmp/whatever/chats/my-chat',
+          part: 'messages',
+          errorClass: 'disk',
+        }),
+      ).toEqual({
+        surface: 'save-async',
+        chatId: 'my-chat',
+        part: 'messages',
+        errorClass: 'disk',
+      })
+    })
+
+    test('fields are omitted (undefined), not renamed, when absent', () => {
+      const payload = failureDiagnostics({ surface: 'checkpoint' })
+      expect(payload.surface).toBe('checkpoint')
+      expect('chatId' in payload).toBe(true)
+      expect(payload.chatId).toBeUndefined()
+      expect('part' in payload).toBe(true)
+      expect(payload.part).toBeUndefined()
+      expect('errorClass' in payload).toBe(true)
+      expect(payload.errorClass).toBeUndefined()
+    })
+
+    test('covers every surface the save paths use', () => {
+      for (const surface of [
+        'checkpoint',
+        'save-sync',
+        'save-async',
+        'exit-flush',
+        'load',
+      ] as const) {
+        expect(failureDiagnostics({ surface }).surface).toBe(surface)
+      }
+    })
   })
 })

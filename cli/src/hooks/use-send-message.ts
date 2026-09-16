@@ -31,6 +31,7 @@ import {
   setLiveChatStateProvider,
   settleCheckpointSave,
 } from '../utils/run-state-storage'
+import { buildRunSummary, writeRunSummary } from '../utils/run-summary'
 import {
   autoCollapsePreviousMessages,
   createAiMessageShell,
@@ -760,7 +761,16 @@ export const useSendMessage = ({
           // updater: the store uses immer, so the updater sees a draft proxy
           // and JSON.stringify of the (unbounded) transcript through proxy
           // traps is several times slower.
-          saveChatState(runState, useChatStore.getState().messages, runChatDir)
+          const finalMessages = useChatStore.getState().messages
+          saveChatState(runState, finalMessages, runChatDir)
+          // Per-run outcome summary (specs/tickets.md, C1): written once at
+          // turn completion, after the transcript it summarizes. Extracted
+          // from tool-call records, so a run with no edits/checks is a valid
+          // all-empty summary rather than an absent one.
+          writeRunSummary(
+            runChatDir,
+            buildRunSummary(finalMessages, { runId: runState.traceSessionId }),
+          )
         }
         handleRunCompletion({
           runState,

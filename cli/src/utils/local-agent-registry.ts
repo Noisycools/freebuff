@@ -14,6 +14,11 @@ import { getSelectedFreebuffModel } from '../state/freebuff-model-store'
 import { getProjectRoot } from '../project-files'
 import { IS_FREEBUFF, type AgentMode } from './constants'
 import { getAgentIdForMode } from './freebuff-agent-selection'
+import {
+  applyPersonaToDefinition,
+  getSelectedPersonaId,
+} from './freebuff-persona'
+import { getCliEnv } from './env'
 import { logger } from './logger'
 import * as bundledAgentsModule from '../agents/bundled-agents.generated'
 
@@ -320,6 +325,10 @@ export const loadLocalAgents = (
  * their custom agents without needing to modify the base agent definition.
  */
 export const loadAgentDefinitions = (): AgentDefinition[] => {
+  // Advisory persona override (FREEBUFF_PERSONA). Unset = null = the default
+  // path below is untouched, so bundled definitions ship unchanged.
+  const personaId = getSelectedPersonaId(getCliEnv())
+
   // Start with bundled agents - these are the default Codebuff agents
   const bundledAgents = getBundledAgents()
   const definitions: AgentDefinition[] = Object.values(bundledAgents).map(
@@ -377,6 +386,18 @@ export const loadAgentDefinitions = (): AgentDefinition[] => {
         }
       }
     }
+  }
+
+  // Apply the persona LAST so it wins the tail of the prompt over MCP/user
+  // merging above; it only appends to systemPrompt, never replaces it.
+  // Scoped to base3 CLI roots: user agents and other harnesses keep their
+  // own prompts untouched (B1 scope: Web/Cloud roots out).
+  if (personaId) {
+    return definitions.map((def) =>
+      def.id.startsWith('base3')
+        ? applyPersonaToDefinition(def, personaId)
+        : def,
+    )
   }
 
   return definitions

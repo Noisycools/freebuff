@@ -84,6 +84,8 @@ export type CliEnv = BaseEnv & {
   FREEBUFF_MODE?: string
   /** Absolute per-process override for isolated CLI settings and transcripts. */
   FREEBUFF_CONFIG_DIR?: string
+  /** Optional persona preset for the base3 root (agents/personas.ts). */
+  FREEBUFF_PERSONA?: string
 }
 
 /**

@@ -1,5 +1,6 @@
 import {
   FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL,
+  FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS,
   hasFreebuffRootSystemPromptOpening,
 } from '@codebuff/common/constants/free-agents'
 import { compactionPolicyForModel } from '@codebuff/common/constants/compaction-policy'
@@ -23,6 +24,18 @@ import base3FreeOxAlpha from '../base3-free-ox-alpha'
 import base3FreeGemini38Flash from '../base3-free-gemini-3-8-flash'
 import base3FreeSolarPro4 from '../base3-free-solar-pro4'
 import base3Lite from '../base3-lite'
+import {
+  PERSONA_IDS,
+  PERSONAS,
+  getPersonaAppendix,
+  isPersonaId,
+} from '../personas'
+import {
+  TEMPLATE_IDS,
+  SAFETY_TEMPLATES,
+  getTemplateAppendix,
+  isTemplateId,
+} from '../templates'
 
 /**
  * The CLI's base3 roots.
@@ -188,5 +201,314 @@ describe('base3 CLI roots', () => {
     expect(base3FreeDeepseek.systemPrompt).not.toContain('/usage')
     // Codebuff's paid modes explain credits; Freebuff has none to explain.
     expect(base3.systemPrompt).toContain('/usage')
+  })
+})
+
+describe('base3 CLI root personas', () => {
+  // The default root is the contract every shipped caller depends on; the
+  // persona option must be invisible until someone opts in.
+  test('default root is byte-identical to the no-persona call', () => {
+    expect(createBase3CliRoot()).toStrictEqual(createBase3CliRoot({}))
+    expect(createBase3CliRoot()).toStrictEqual(
+      createBase3CliRoot({ persona: undefined }),
+    )
+    // And it carries no persona section at all.
+    expect(createBase3CliRoot().systemPrompt).not.toContain('# Working style')
+  })
+
+  test('a persona appends its section inside the appendix, changing nothing else', () => {
+    for (const personaId of PERSONA_IDS) {
+      const plain = createBase3CliRoot()
+      const withPersona = createBase3CliRoot({ persona: personaId })
+
+      expect(withPersona.systemPrompt).toContain(getPersonaAppendix(personaId))
+      // Appended AFTER the meta-information section, never position 0.
+      expect(
+        withPersona.systemPrompt!.indexOf('# Working style'),
+      ).toBeGreaterThan(withPersona.systemPrompt!.indexOf('Meta-information'))
+      // The rest of the definition is untouched: same literal toolset, same
+      // efficiency flags, same model.
+      expect(withPersona.toolNames).toEqual(plain.toolNames)
+      expect(withPersona.model).toBe(plain.model)
+      expect(withPersona.windowedFileReads).toBe(plain.windowedFileReads)
+      expect(withPersona.compactContext).toEqual(plain.compactContext)
+      expect(withPersona.spawnableAgents ?? []).toEqual([])
+      // The gate placeholder still appears exactly once, and the persona
+      // section lands before it (the appendix is inside the prompt, the
+      // placeholder is the runtime tail).
+      expect(
+        withPersona.systemPrompt!.match(/\{CODEBUFF_SYSTEM_INFO_PROMPT\}/g),
+      ).toHaveLength(1)
+      expect(
+        withPersona.systemPrompt!.endsWith('{CODEBUFF_SYSTEM_INFO_PROMPT}\n'),
+      ).toBe(true)
+    }
+  })
+
+  test('every persona keeps the opening the free-mode gate accepts', () => {
+    for (const personaId of PERSONA_IDS) {
+      for (const isFreebuff of [false, true]) {
+        const root = createBase3CliRoot({ persona: personaId, isFreebuff })
+        expect(hasFreebuffRootSystemPromptOpening(root.systemPrompt!)).toBe(
+          true,
+        )
+      }
+    }
+  })
+
+  test('persona composes with noAskUser without re-adding human tools', () => {
+    const withoutUser = createBase3CliRoot({ noAskUser: true })
+    const both = createBase3CliRoot({
+      noAskUser: true,
+      persona: 'fast-implementer',
+    })
+    expect(both.toolNames).toEqual(withoutUser.toolNames)
+    expect(both.toolNames).not.toContain('ask_user')
+    expect(both.toolNames).not.toContain('suggest_followups')
+  })
+
+  test('persona data is self-contained appendix text', () => {
+    for (const personaId of PERSONA_IDS) {
+      const { appendix, label, description } = PERSONAS[personaId]
+      // Static prose: no runtime placeholders, so it survives stringification
+      // exactly as written.
+      expect(appendix).not.toContain('{CODEBUFF_')
+      // It must not read as a system-prompt opening: personas are appended,
+      // never position 0, and none of the canonical openings may appear inside
+      // one (see FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS usage in the gate).
+      for (const opening of FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS) {
+        expect(appendix).not.toContain(opening)
+      }
+      expect(appendix.startsWith('# Working style:')).toBe(true)
+      expect(appendix).toContain(label.toLowerCase())
+      expect(description.length).toBeGreaterThan(0)
+      // Small enough that it can ride on every turn.
+      expect(appendix.split(/\s+/).length).toBeLessThan(300)
+    }
+  })
+
+  test('unknown persona ids throw at the factory and the helper', () => {
+    // A persona is an explicit opt-in: silently running the default would make
+    // a typo indistinguishable from the persona working.
+    expect(() => createBase3CliRoot({ persona: 'no-such-persona' })).toThrow(
+      /Unknown persona 'no-such-persona'/,
+    )
+    expect(() => getPersonaAppendix('no-such-persona')).toThrow(
+      /Valid personas: conservative-reviewer, fast-implementer/,
+    )
+    expect(isPersonaId('conservative-reviewer')).toBe(true)
+    expect(isPersonaId('no-such-persona')).toBe(false)
+    expect(isPersonaId(undefined)).toBe(false)
+  })
+})
+
+describe('base3 tool-routing guidance (B2)', () => {
+  // Routing = prompt guidance + which tools are present (single-loop harness
+  // has no subagents to delegate to). Each rule states trigger, action, and
+  // fallback, so error handling is deterministic, never improvised.
+  const routingSection = (prompt: string) =>
+    prompt.split('# Tool routing')[1]!.split('Meta-information')[0]!
+
+  test('default root carries trigger-action-fallback routing rules', () => {
+    const prompt = createBase3CliRoot().systemPrompt!
+    expect(prompt).toContain('# Tool routing')
+    expect(prompt).toContain('Decide vs ask')
+    expect(prompt).toContain('Verify vs report')
+    // One explicit fallback per rule: three rules, three fallbacks.
+    expect(routingSection(prompt).match(/Fallback:/g)).toHaveLength(3)
+  })
+
+  test('noAskUser keeps routing rules but drops the human tools', () => {
+    const prompt = createBase3CliRoot({ noAskUser: true }).systemPrompt!
+    expect(prompt).toContain('# Tool routing')
+    expect(prompt).toContain('Verify vs report')
+    expect(routingSection(prompt).match(/Fallback:/g)).toHaveLength(3)
+    expect(prompt).not.toContain('ask_user')
+    expect(prompt).not.toContain('suggest_followups')
+  })
+
+  test('routing guidance is self-contained appendix text', async () => {
+    // Assert on the constant directly: slicing the prompt would also catch
+    // the gravity and skill guidance that follow it in the appendix.
+    const { toolRoutingGuidance } = await import('../constants')
+    for (const includeAskUser of [true, false]) {
+      const section = toolRoutingGuidance(includeAskUser)
+      // Static prose: no runtime placeholders, so it survives stringification
+      // exactly as written.
+      expect(section).not.toContain('{CODEBUFF_')
+      // No system-prompt opening inside the appendix text.
+      for (const opening of FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS) {
+        expect(section).not.toContain(opening)
+      }
+      // Only tools the root offers may be named: no subagent-spawning advice
+      // on a single-loop root.
+      for (const name of [
+        'spawn_agents',
+        'set_output',
+        'thinker',
+        'subagent',
+      ]) {
+        expect(section).not.toContain(name)
+      }
+      // Small enough to ride on every turn.
+      expect(section.split(/\s+/).length).toBeLessThan(200)
+      // The prompt carries the matching variant.
+      const prompt = createBase3CliRoot({
+        noAskUser: !includeAskUser,
+      }).systemPrompt!
+      expect(prompt).toContain(section)
+    }
+  })
+
+  test('routing guidance composes with personas without moving the opening', () => {
+    for (const personaId of PERSONA_IDS) {
+      const prompt = createBase3CliRoot({ persona: personaId }).systemPrompt!
+      expect(prompt).toContain('# Tool routing')
+      expect(hasFreebuffRootSystemPromptOpening(prompt)).toBe(true)
+    }
+  })
+})
+
+describe('base3 CLI root safety templates (B3)', () => {
+  // Same contract as the persona option: the default root is what every
+  // shipped caller depends on, so a template must be invisible until opted in.
+  test('default root is byte-identical to the no-template call', () => {
+    expect(createBase3CliRoot()).toStrictEqual(createBase3CliRoot({}))
+    expect(createBase3CliRoot()).toStrictEqual(
+      createBase3CliRoot({ safetyTemplate: undefined }),
+    )
+    // And it carries no template section at all — additive-only means the
+    // three templates ship present in source, absent from the default prompt.
+    expect(createBase3CliRoot().systemPrompt).not.toContain('# Safety template')
+  })
+
+  test('a template appends its section inside the appendix, changing nothing else', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      const plain = createBase3CliRoot()
+      const withTemplate = createBase3CliRoot({ safetyTemplate: templateId })
+
+      expect(withTemplate.systemPrompt).toContain(
+        getTemplateAppendix(templateId),
+      )
+      // Appended AFTER the meta-information section (and after any persona
+      // section), never position 0.
+      expect(
+        withTemplate.systemPrompt!.indexOf('# Safety template'),
+      ).toBeGreaterThan(
+        withTemplate.systemPrompt!.indexOf('Meta-information'),
+      )
+      // The rest of the definition is untouched: same literal toolset, same
+      // efficiency flags, same model.
+      expect(withTemplate.toolNames).toEqual(plain.toolNames)
+      expect(withTemplate.model).toBe(plain.model)
+      expect(withTemplate.windowedFileReads).toBe(plain.windowedFileReads)
+      expect(withTemplate.compactContext).toEqual(plain.compactContext)
+      expect(withTemplate.spawnableAgents ?? []).toEqual([])
+      expect(withTemplate.instructionsPrompt).toBeUndefined()
+      // The gate placeholder still appears exactly once, and the template
+      // section lands before it (the appendix is inside the prompt, the
+      // placeholder is the runtime tail).
+      expect(
+        withTemplate.systemPrompt!.match(/\{CODEBUFF_SYSTEM_INFO_PROMPT\}/g),
+      ).toHaveLength(1)
+      expect(
+        withTemplate.systemPrompt!.endsWith('{CODEBUFF_SYSTEM_INFO_PROMPT}\n'),
+      ).toBe(true)
+    }
+  })
+
+  test('every template keeps the opening the free-mode gate accepts', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      for (const isFreebuff of [false, true]) {
+        const root = createBase3CliRoot({
+          safetyTemplate: templateId,
+          isFreebuff,
+        })
+        expect(hasFreebuffRootSystemPromptOpening(root.systemPrompt!)).toBe(
+          true,
+        )
+      }
+    }
+  })
+
+  test('template composes with persona and noAskUser without re-adding human tools', () => {
+    const withoutUser = createBase3CliRoot({ noAskUser: true })
+    const both = createBase3CliRoot({
+      noAskUser: true,
+      persona: 'conservative-reviewer',
+      safetyTemplate: 'test-first-fix',
+    })
+    expect(both.toolNames).toEqual(withoutUser.toolNames)
+    expect(both.toolNames).not.toContain('ask_user')
+    expect(both.toolNames).not.toContain('suggest_followups')
+    // Both sections survive composition, in option order: persona first, then
+    // template, then the runtime tail.
+    expect(both.systemPrompt).toContain(getPersonaAppendix('conservative-reviewer'))
+    expect(both.systemPrompt).toContain(getTemplateAppendix('test-first-fix'))
+    expect(
+      both.systemPrompt!.indexOf('# Working style'),
+    ).toBeLessThan(both.systemPrompt!.indexOf('# Safety template'))
+    expect(
+      both.systemPrompt!.indexOf('# Safety template'),
+    ).toBeLessThan(both.systemPrompt!.indexOf('{CODEBUFF_SYSTEM_INFO_PROMPT}'))
+  })
+
+  test('template data is self-contained, tool-free appendix text', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      const { appendix, label, description } = SAFETY_TEMPLATES[templateId]
+      // Static prose: no runtime placeholders, so it survives stringification
+      // exactly as written.
+      expect(appendix).not.toContain('{CODEBUFF_')
+      // No system-prompt opening inside the appendix text: templates are
+      // appended, never position 0, and keeping the strings distinct stops the
+      // opening gate (and its tests) ever matching one.
+      for (const opening of FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS) {
+        expect(appendix).not.toContain(opening)
+      }
+      // Templates are also knowledge-file material for agents that may not
+      // offer base3's tools, so they name no tool at all.
+      for (const name of [
+        'spawn_agents',
+        'set_output',
+        'thinker',
+        'subagent',
+        'ask_user',
+        'suggest_followups',
+        'web_search',
+        'read_url',
+        'gravity_index',
+        'render_ui',
+        'skill',
+        'read_files',
+        'str_replace',
+        'write_file',
+        'run_terminal_command',
+        'code_search',
+        'glob',
+        'list_directory',
+        'write_todos',
+      ]) {
+        expect(appendix).not.toContain(name)
+      }
+      expect(appendix.startsWith('# Safety template:')).toBe(true)
+      expect(appendix).toContain(label.toLowerCase())
+      expect(description.length).toBeGreaterThan(0)
+      // Small enough that it can ride on every turn.
+      expect(appendix.split(/\s+/).length).toBeLessThan(300)
+    }
+  })
+
+  test('unknown template ids throw at the factory and the helper', () => {
+    // A template is an explicit opt-in: silently running the default would
+    // make a typo indistinguishable from the template working.
+    expect(() =>
+      createBase3CliRoot({ safetyTemplate: 'no-such-template' }),
+    ).toThrow(/Unknown safety template 'no-such-template'/)
+    expect(() => getTemplateAppendix('no-such-template')).toThrow(
+      /Valid templates: secure-coding, minimal-change, test-first-fix/,
+    )
+    expect(isTemplateId('secure-coding')).toBe(true)
+    expect(isTemplateId('no-such-template')).toBe(false)
+    expect(isTemplateId(undefined)).toBe(false)
   })
 })

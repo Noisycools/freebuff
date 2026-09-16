@@ -2,6 +2,8 @@
 
 This repository is a public mirror of the Freebuff/Codebuff source tree. The private repository is the source of truth, so accepted public contributions are ported into the private repo and then exported back here.
 
+> **Fork context.** This checkout is also a personalized derivative maintained by @Noisycools with its own roadmap (`specs/tickets.md`). For how that relates to this PR flow, which files are fork-owned, and which surfaces may never be customized, see the [fork guide](./docs/fork.md). If your change customizes agent prompts, guidance constants, or product flags, run the checklist in the [customization guide](./docs/customization.md) first — access-enforcement code (`common/src/constants/free-agents.ts` and siblings) is off-limits.
+
 ## Public Contributions
 
 Good public PRs are usually scoped to:
@@ -108,6 +110,6 @@ the bot got you wrong, reopen or reply — a maintainer reads those.
 One thing worth knowing before you file: **model outages and daily limits are
 not tracked here.** If a model is unavailable or you have hit a session cap,
 that is operational and [Discord](https://discord.gg/yXG3w7wxfs) is much faster.
-If you think a limit is being *counted* wrong — the wrong number of sessions
+If you think a limit is being _counted_ wrong — the wrong number of sessions
 used, limits not resetting, a premium slot consumed by a free model — that is a
 bug and we do want the issue.

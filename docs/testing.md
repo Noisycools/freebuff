@@ -1,10 +1,28 @@
 # Testing
 
+> **Provenance note (fork).** Parts of this guide describe upstream-only
+> infrastructure that does **not** exist in this export: the CI test guard
+> (`scripts/ci/test-with-guard.ts`) and its baseline file
+> (`.github/test-baselines.json`), and the flake-hunting harness
+> (`scripts/flake-hunt.ts` plus the weekly `flake-hunt.yml` workflow).
+> Upstream's CI runs package-local `bun test` through the guard and fails on
+> missing/below-baseline test counts; here, the equivalent gates are
+> package-local `bun test` + `bun run typecheck` run locally, plus this tree's
+> actual CI (`.github/workflows/ci.yml`), which builds the SDK, builds the
+> Freebuff binary, and smoke-tests it. The guidance below is otherwise accurate
+> for this tree and worth following, since the packages are written against
+> it. Background: `docs/fork.md`.
+
 - Prefer dependency injection over module mocking; define contracts in `common/src/types/contracts/`.
 - Use `spyOn()` only for globals / legacy seams.
 - Avoid `mock.module()` for functions; use `@codebuff/common/testing/mock-modules.ts` helpers for constants only.
 
 CLI hook testing note: React 19 + Bun + RTL `renderHook()` is unreliable; prefer integration tests via components for hook behavior.
+
+> Symptom-first help for the failure modes this guide describes (missing env
+> fixture, gitignored build artifacts, Windows-only `EPERM` renames) lives in
+> `docs/troubleshooting.md`.
+
 
 ## Test env must come from a fixture, not the developer's `.env`
 

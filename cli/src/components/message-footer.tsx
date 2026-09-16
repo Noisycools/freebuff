@@ -7,7 +7,13 @@ import React, { useCallback, useMemo } from 'react'
 import { CopyButton } from './copy-button'
 import { ElapsedTimer } from './elapsed-timer'
 import { FeedbackIconButton } from './feedback-icon-button'
+import { RunSummaryBlock } from './run-summary-block'
 import { useSubscriptionQuery } from '../hooks/use-subscription-query'
+import {
+  extractChecksFromBlocks,
+  extractFilesChangedFromBlocks,
+  extractUnresolvedRisksFromMessage,
+} from '../utils/run-summary'
 import {
   getBlockPercentRemaining,
   isCoveredBySubscription,
@@ -48,6 +54,29 @@ export const MessageFooter: React.FC<MessageFooterProps> = ({
   onCloseFeedback,
 }) => {
   const theme = useTheme()
+
+  // Run-end outcome block (specs/tickets.md, C1), derived from the same
+  // tool-call records that feed the persisted sidecar. Recomputed on render
+  // of a completed message rather than rehydrated, so a restored chat shows
+  // the same summary without carrying a second copy of the data in memory.
+  const runSummary = useMemo(() => {
+    if (!isComplete) return null
+    const filesChanged = extractFilesChangedFromBlocks(blocks)
+    const checks = extractChecksFromBlocks(blocks)
+    const unresolvedRisks = extractUnresolvedRisksFromMessage({
+      id: messageId,
+      variant: 'ai',
+      content,
+      blocks,
+      timestamp: '',
+      isComplete: true,
+    })
+    const hasAnything =
+      filesChanged.length > 0 ||
+      checks.length > 0 ||
+      unresolvedRisks.length > 0
+    return hasAnything ? { filesChanged, checks, unresolvedRisks } : null
+  }, [isComplete, blocks, content, messageId])
 
   // Memoize selectors to prevent new function references on every render
   const selectIsFeedbackOpenMemo = useMemo(
@@ -187,7 +216,10 @@ export const MessageFooter: React.FC<MessageFooterProps> = ({
     return null
   }
 
-  return (
+  // When the run changed files or ran checks, wrap the footer row and the
+  // outcome block in a column so the summary lines sit above the timestamp/
+  // feedback row instead of beside it.
+  const footerRow = (
     <box
       style={{
         flexDirection: 'row',
@@ -214,6 +246,28 @@ export const MessageFooter: React.FC<MessageFooterProps> = ({
           {item.node}
         </React.Fragment>
       ))}
+    </box>
+  )
+
+  if (!runSummary) {
+    return footerRow
+  }
+
+  return (
+    <box
+      style={{
+        flexDirection: 'column',
+        width: '100%',
+        marginTop: 0,
+        marginBottom: 0,
+      }}
+    >
+      <RunSummaryBlock
+        filesChanged={runSummary.filesChanged}
+        checks={runSummary.checks}
+        unresolvedRisks={runSummary.unresolvedRisks}
+      />
+      {footerRow}
     </box>
   )
 }

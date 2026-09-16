@@ -239,6 +239,33 @@ function chatShapeSummary(runState: RunState, messages: ChatMessage[]) {
   }
 }
 
+/** The surface a persistence call came from (specs/tickets.md, C2). The
+ * checkpoint drain, the sync save, the async save, and the exit flush fail in
+ * characteristically different ways (a stale chat-dir capture only happens on
+ * scheduled checkpoints; a disk-full only shows up at write time), so the
+ * surface is the first thing a diagnostic needs to narrow a symptom. Pure and
+ * injectable so tests assert the payload without capturing the logger. */
+export type SaveSurface =
+  | 'checkpoint'
+  | 'save-sync'
+  | 'save-async'
+  | 'exit-flush'
+  | 'load'
+
+export function failureDiagnostics(fields: {
+  surface: SaveSurface
+  chatDir?: string
+  part?: 'runState' | 'messages' | 'meta'
+  errorClass?: SaveErrorClass
+}): Record<string, unknown> {
+  return {
+    surface: fields.surface,
+    chatId: fields.chatDir !== undefined ? path.basename(fields.chatDir) : undefined,
+    part: fields.part,
+    errorClass: fields.errorClass,
+  }
+}
+
 type SerializedChatState = {
   runStateJson?: string
   messagesJson?: string
@@ -255,6 +282,7 @@ function serializeChatState(
   runState: RunState,
   messages: ChatMessage[],
   chatDir: string,
+  surface: SaveSurface = 'save-sync',
 ): SerializedChatState {
   const result: SerializedChatState = {}
   for (const part of ['runState', 'messages'] as const) {
@@ -270,7 +298,7 @@ function serializeChatState(
         bestEffortLog(
           'warn',
           {
-            part,
+            ...failureDiagnostics({ surface, chatDir, part }),
             reason: fallback.reason,
             cyclePaths: fallback.cyclePaths,
             truncatedStrings: fallback.truncatedStrings,
@@ -286,8 +314,7 @@ function serializeChatState(
         bestEffortLog(
           errorClass === 'other' ? 'error' : 'warn',
           {
-            part,
-            errorClass,
+            ...failureDiagnostics({ surface, chatDir, part, errorClass }),
             error: error instanceof Error ? error.message : String(error),
             ...chatShapeSummary(runState, messages),
           },
@@ -303,6 +330,7 @@ function logSaveWriteFailure(
   error: unknown,
   chatDir: string,
   message: string,
+  surface: SaveSurface = 'save-sync',
 ): void {
   const errorClass = classifySaveError(error)
   if (!shouldLogSaveIssue(`${chatDir}|write|${errorClass}`)) {
@@ -311,7 +339,7 @@ function logSaveWriteFailure(
   bestEffortLog(
     errorClass === 'other' ? 'error' : 'warn',
     {
-      errorClass,
+      ...failureDiagnostics({ surface, chatDir, errorClass }),
       error: error instanceof Error ? error.message : String(error),
     },
     message,
@@ -357,7 +385,7 @@ export function saveChatState(
       writeChatMeta(chatDir, messages)
     }
   } catch (error) {
-    logSaveWriteFailure(error, chatDir, 'Failed to save chat state')
+    logSaveWriteFailure(error, chatDir, 'Failed to save chat state', 'save-sync')
   }
 }
 
@@ -370,7 +398,7 @@ async function saveChatStateAsync(
   messages: ChatMessage[],
   chatDir: string,
 ): Promise<void> {
-  const serialized = serializeChatState(runState, messages, chatDir)
+  const serialized = serializeChatState(runState, messages, chatDir, 'save-async')
   if (!serialized.runStateJson && !serialized.messagesJson) {
     return
   }
@@ -394,7 +422,7 @@ async function saveChatStateAsync(
       writeChatMeta(chatDir, messages)
     }
   } catch (error) {
-    logSaveWriteFailure(error, chatDir, 'Failed to save chat state (async)')
+    logSaveWriteFailure(error, chatDir, 'Failed to save chat state (async)', 'save-async')
   }
 }
 
@@ -512,6 +540,11 @@ export function loadMostRecentChatState(
     } catch (error) {
       logger.warn(
         {
+          ...failureDiagnostics({
+            surface: 'load',
+            chatDir,
+            part: 'runState',
+          }),
           runStatePath,
           error: error instanceof Error ? error.message : String(error),
         },
@@ -527,6 +560,11 @@ export function loadMostRecentChatState(
     } catch (error) {
       logger.warn(
         {
+          ...failureDiagnostics({
+            surface: 'load',
+            chatDir,
+            part: 'messages',
+          }),
           messagesPath,
           error: error instanceof Error ? error.message : String(error),
         },

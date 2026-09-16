@@ -3,6 +3,8 @@
 English | [简体中文](./README.zh-CN.md)
 
 > This repository is maintained as a personalized derivative of Freebuff by [@Noisycools](https://github.com/Noisycools), focused on safe customization, roadmap-driven agent improvements, and compatibility with the upstream TypeScript/Bun monorepo.
+>
+> New here? The [fork guide](./docs/fork.md) explains which files are fork-owned, how the contribution flow in [CONTRIBUTING.md](./CONTRIBUTING.md) relates to the fork's own roadmap, and which surfaces may never be customized.
 
 **Five free AI products for coding, building, and research.** No subscription, credits, or API key required.
 
@@ -100,7 +102,7 @@ Start the CLI separately with:
 bun start-cli
 ```
 
-See the [Contributing Guide](./CONTRIBUTING.md), [development guide](./docs/development.md), and [testing guide](./docs/testing.md) for environment setup and the checks to run before opening a pull request.
+See the [Contributing Guide](./CONTRIBUTING.md) and [testing guide](./docs/testing.md) for environment setup and the checks to run before opening a pull request.
 
 ## Built on Codebuff
 
